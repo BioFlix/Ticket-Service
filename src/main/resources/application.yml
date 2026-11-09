@@ -1,0 +1,19 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: ticket-service
+
+  mongodb:
+    uri: mongodb://${MONGO_HOST:localhost}:27017/tickets_db
+
+  data:
+    mongodb:
+      auto-index-creation: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
