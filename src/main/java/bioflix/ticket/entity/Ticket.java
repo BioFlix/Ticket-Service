@@ -25,6 +25,12 @@ public class Ticket {
     private Instant startTime;
     private String seat;
 
+    /**
+     * showtimeId|seat while the ticket holds the seat (VALID or USED). Removed on cancel so the
+     * seat can be ticketed again for a new booking. Unique via a partial index (MongoIndexConfig).
+     */
+    private String seatKey;
+
     private TicketStatus status = TicketStatus.VALID;
 
     /** Text encoded in the QR code – scanned at the door. */
@@ -35,6 +41,7 @@ public class Ticket {
 
     private Instant issuedAt;
     private Instant usedAt;
+    private Instant cancelledAt;
 
     public Ticket() {
     }
@@ -48,7 +55,16 @@ public class Ticket {
         this.hallName = hallName;
         this.startTime = startTime;
         this.seat = seat;
+        this.seatKey = seatKey(showtimeId, seat);
         this.issuedAt = Instant.now();
+    }
+
+    public static String seatKey(String showtimeId, String seat) {
+        return showtimeId + "|" + seat;
+    }
+
+    public static String qrUrl(String ticketId) {
+        return "/api/tickets/" + ticketId + "/qr";
     }
 
     public void markUsed() {
@@ -56,8 +72,11 @@ public class Ticket {
         this.usedAt = Instant.now();
     }
 
+    /** Voids the ticket and releases the seat. */
     public void cancel() {
         this.status = TicketStatus.CANCELLED;
+        this.seatKey = null;   // null fields aren't written, so the partial unique index ignores this ticket
+        this.cancelledAt = Instant.now();
     }
 
     public String getId() { return id; }
@@ -68,6 +87,7 @@ public class Ticket {
     public String getHallName() { return hallName; }
     public Instant getStartTime() { return startTime; }
     public String getSeat() { return seat; }
+    public String getSeatKey() { return seatKey; }
     public TicketStatus getStatus() { return status; }
     public String getQrPayload() { return qrPayload; }
     public void setQrPayload(String qrPayload) { this.qrPayload = qrPayload; }
@@ -75,4 +95,5 @@ public class Ticket {
     public void setQrCodePng(byte[] qrCodePng) { this.qrCodePng = qrCodePng; }
     public Instant getIssuedAt() { return issuedAt; }
     public Instant getUsedAt() { return usedAt; }
+    public Instant getCancelledAt() { return cancelledAt; }
 }

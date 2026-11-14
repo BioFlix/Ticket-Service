@@ -12,6 +12,28 @@ spring:
     mongodb:
       auto-index-creation: true
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # A failing message is retried a few times (e.g. a seat whose cancellation hasn't arrived yet),
+        # then rejected without requeue -> ends up in ticket-service.dead-letter
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 5
+          initial-interval: 2s
+          multiplier: 2
+          max-interval: 20s
+
+app:
+  rabbitmq:
+    exchange: bioflix.events
+    dead-letter-exchange: bioflix.events.dlx
+
 management:
   endpoints:
     web:

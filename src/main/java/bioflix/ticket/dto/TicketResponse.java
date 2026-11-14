@@ -16,11 +16,12 @@ public record TicketResponse(
         TicketStatus status,
         String qrUrl,
         Instant issuedAt,
-        Instant usedAt
+        Instant usedAt,
+        Instant cancelledAt
 ) {
     public static TicketResponse from(Ticket t) {
         return new TicketResponse(t.getId(), t.getBookingId(), t.getMovieTitle(), t.getHallName(),
-                t.getStartTime(), t.getSeat(), t.getStatus(), "/api/tickets/" + t.getId() + "/qr",
-                t.getIssuedAt(), t.getUsedAt());
+                t.getStartTime(), t.getSeat(), t.getStatus(), Ticket.qrUrl(t.getId()),
+                t.getIssuedAt(), t.getUsedAt(), t.getCancelledAt());
     }
 }

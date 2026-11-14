@@ -3,10 +3,7 @@ package bioflix.ticket.dto;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * What ticket-service needs to issue tickets for a confirmed booking.
- * TODO (RabbitMQ): build this from the booking.confirmed event.
- */
+/** What ticket-service needs to issue tickets for a confirmed booking (built from booking.confirmed). */
 public record IssueTicketsRequest(
         Long bookingId,
         Long userId,
