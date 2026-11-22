@@ -17,10 +17,11 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: simple   # OutboxRelay waits for the broker to confirm before marking an event published
     listener:
       simple:
-        # A failing message is retried a few times (e.g. a seat whose cancellation hasn't arrived yet),
-        # then rejected without requeue -> ends up in ticket-service.dead-letter
+        # A failing message is retried a few times, then rejected without requeue
+        # -> ends up in ticket-service.dead-letter
         default-requeue-rejected: false
         retry:
           enabled: true
@@ -31,8 +32,14 @@ spring:
 
 app:
   rabbitmq:
-    exchange: bioflix.events
-    dead-letter-exchange: bioflix.events.dlx
+    exchange: cinema.events
+    dead-letter-exchange: cinema.events.dlx
+  outbox:
+    poll-interval: 1s
+    batch-size: 50
+  ticket:
+    # Signs the QR tokens. Set TICKET_QR_SECRET (at least 32 characters) outside local development.
+    qr-secret: ${TICKET_QR_SECRET:local-dev-only-secret-change-me-0123456789}
 
 management:
   endpoints:

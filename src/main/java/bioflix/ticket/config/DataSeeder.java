@@ -2,9 +2,11 @@ package bioflix.ticket.config;
 
 import bioflix.ticket.entity.CancelledBooking;
 import bioflix.ticket.entity.Ticket;
+import bioflix.ticket.entity.TicketSeat;
 import bioflix.ticket.repository.CancelledBookingRepository;
 import bioflix.ticket.repository.TicketRepository;
-import bioflix.ticket.service.QrCodeGenerator;
+import bioflix.ticket.service.QrTokenService;
+import bioflix.ticket.service.TicketNumberGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -21,24 +23,31 @@ import java.util.function.Consumer;
  * Demo data for local development. Only runs with the "seed" profile:
  * {@code mvn spring-boot:run -Dspring-boot.run.profiles=seed}
  * <p>
- * Writes straight to MongoDB (no ticket.issued events). Safe to run again – bookings that
- * already have tickets are skipped.
+ * Writes straight to MongoDB – no ticket.issued events, so no e-mails. Safe to run again:
+ * bookings that already have tickets are skipped.
  */
 @Component
 @Profile("seed")
 public class DataSeeder implements ApplicationRunner {
 
+    // Fixed UUIDs so they're easy to use in Swagger UI / curl
+    public static final String CUSTOMER_1 = "11111111-1111-4111-8111-111111111111";
+    public static final String CUSTOMER_2 = "22222222-2222-4222-8222-222222222222";
+    public static final String CUSTOMER_3 = "33333333-3333-4333-8333-333333333333";
+
     private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
 
     private final TicketRepository ticketRepository;
     private final CancelledBookingRepository cancelledBookingRepository;
-    private final QrCodeGenerator qrCodeGenerator;
+    private final TicketNumberGenerator ticketNumbers;
+    private final QrTokenService qrTokens;
 
     public DataSeeder(TicketRepository ticketRepository, CancelledBookingRepository cancelledBookingRepository,
-                      QrCodeGenerator qrCodeGenerator) {
+                      TicketNumberGenerator ticketNumbers, QrTokenService qrTokens) {
         this.ticketRepository = ticketRepository;
         this.cancelledBookingRepository = cancelledBookingRepository;
-        this.qrCodeGenerator = qrCodeGenerator;
+        this.ticketNumbers = ticketNumbers;
+        this.qrTokens = qrTokens;
     }
 
     @Override
@@ -48,36 +57,45 @@ public class DataSeeder implements ApplicationRunner {
         Instant nextWeek = now.plus(7, ChronoUnit.DAYS);
         Instant yesterday = now.minus(1, ChronoUnit.DAYS);
 
-        // User 1: two valid tickets for tomorrow
-        seed(1001L, 1L, "seed-showtime-dune", "Dune: Part Two", "Sal 1", tomorrow, List.of("C7", "C8"), t -> { });
+        // Showtime ids look like Catalog ObjectIds
+        String dune = "66f000000000000000000c01";
+        String oppenheimer = "66f000000000000000000c02";
+        String interstellar = "66f000000000000000000c03";
 
-        // User 2: already watched – ticket was scanned at the door
-        seed(1002L, 2L, "seed-showtime-oppenheimer", "Oppenheimer", "Sal 2", yesterday, List.of("A1"), Ticket::markUsed);
+        // Customer 1: two valid tickets for tomorrow
+        seed("b0000000-0000-4000-8000-000000000001", CUSTOMER_1, dune, "Dune: Part Two", "Sal 1", tomorrow,
+                List.of(new TicketSeat("C", 7, "STANDARD"), new TicketSeat("C", 8, "STANDARD")), t -> { });
 
-        // User 1 cancelled booking 1003 (seat F5) ...
-        seed(1003L, 1L, "seed-showtime-interstellar", "Interstellar", "Sal 3", nextWeek, List.of("F5"), Ticket::cancel);
-        if (!cancelledBookingRepository.existsById(1003L)) {
-            cancelledBookingRepository.save(new CancelledBooking(1003L));
+        // Customer 2: already watched – scanned at the door
+        seed("b0000000-0000-4000-8000-000000000002", CUSTOMER_2, oppenheimer, "Oppenheimer", "Sal 2", yesterday,
+                List.of(new TicketSeat("A", 1, "WHEELCHAIR")), Ticket::markScanned);
+
+        // Customer 1 cancelled this booking (seat F5) ...
+        String cancelledBooking = "b0000000-0000-4000-8000-000000000003";
+        seed(cancelledBooking, CUSTOMER_1, interstellar, "Interstellar", "Sal 3", nextWeek,
+                List.of(new TicketSeat("F", 5, "VIP")), Ticket::markVoid);
+        if (!cancelledBookingRepository.existsById(cancelledBooking)) {
+            cancelledBookingRepository.save(new CancelledBooking(cancelledBooking, "USER"));
         }
-        // ... so user 3 could book the same seat F5 afterwards
-        seed(1004L, 3L, "seed-showtime-interstellar", "Interstellar", "Sal 3", nextWeek, List.of("F5", "F6"), t -> { });
+        // ... so customer 3 could book the same seat F5 afterwards
+        seed("b0000000-0000-4000-8000-000000000004", CUSTOMER_3, interstellar, "Interstellar", "Sal 3", nextWeek,
+                List.of(new TicketSeat("F", 5, "VIP"), new TicketSeat("F", 6, "VIP")), t -> { });
     }
 
-    private void seed(Long bookingId, Long userId, String showtimeId, String movieTitle, String hallName,
-                      Instant startTime, List<String> seats, Consumer<Ticket> finish) {
+    private void seed(String bookingId, String userId, String showtimeId, String movieTitle, String hallName,
+                      Instant startsAt, List<TicketSeat> seats, Consumer<Ticket> finish) {
         if (!ticketRepository.findByBookingId(bookingId).isEmpty()) {
             log.info("Seed booking {} already exists – skipping", bookingId);
             return;
         }
-        for (String seat : seats) {
-            Ticket ticket = ticketRepository.save(
-                    new Ticket(bookingId, userId, showtimeId, movieTitle, hallName, startTime, seat));
-            String payload = "CINEMA-TICKET:" + ticket.getId();
-            ticket.setQrPayload(payload);
-            ticket.setQrCodePng(qrCodeGenerator.generatePng(payload));
+        for (TicketSeat seat : seats) {
+            String ticketNumber = ticketNumbers.next();
+            Ticket ticket = new Ticket(ticketNumber, bookingId, userId, showtimeId, seat, movieTitle, hallName,
+                    startsAt, qrTokens.sign(ticketNumber, showtimeId));
             finish.accept(ticket);
-            ticketRepository.save(ticket);
+            ticketRepository.insert(ticket);
         }
-        log.info("Seeded booking {} for user {}: {} {}", bookingId, userId, movieTitle, seats);
+        log.info("Seeded booking {} for user {}: {} {}", bookingId, userId, movieTitle,
+                seats.stream().map(TicketSeat::label).toList());
     }
 }

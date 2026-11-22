@@ -8,23 +8,27 @@ import java.time.Instant;
 /**
  * Remembers that a booking was cancelled. booking.confirmed and booking.cancelled arrive on
  * separate queues, so a late booking.confirmed must not issue tickets for a cancelled booking.
+ * (Not in the data model – an addition to handle out-of-order events.)
  */
 @Document(collection = "cancelled_bookings")
 public class CancelledBooking {
 
     @Id
-    private Long bookingId;
+    private String bookingId;
 
+    private String reason;
     private Instant cancelledAt;
 
     public CancelledBooking() {
     }
 
-    public CancelledBooking(Long bookingId) {
+    public CancelledBooking(String bookingId, String reason) {
         this.bookingId = bookingId;
+        this.reason = reason;
         this.cancelledAt = Instant.now();
     }
 
-    public Long getBookingId() { return bookingId; }
+    public String getBookingId() { return bookingId; }
+    public String getReason() { return reason; }
     public Instant getCancelledAt() { return cancelledAt; }
 }

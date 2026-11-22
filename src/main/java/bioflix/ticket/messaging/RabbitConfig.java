@@ -15,15 +15,11 @@ import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * All services share one topic exchange. ticket-service owns two queues; messages that still fail
- * after the listener retries go to a dead-letter queue so they can be inspected instead of looping.
+ * All services share the cinema.events topic exchange. ticket-service owns two queues; messages that
+ * still fail after the listener retries go to a dead-letter queue so they can be inspected instead of looping.
  */
 @Configuration
 public class RabbitConfig {
-
-    public static final String BOOKING_CONFIRMED = "booking.confirmed";
-    public static final String BOOKING_CANCELLED = "booking.cancelled";
-    public static final String TICKET_ISSUED = "ticket.issued";
 
     public static final String CONFIRMED_QUEUE = "ticket-service.booking.confirmed";
     public static final String CANCELLED_QUEUE = "ticket-service.booking.cancelled";
@@ -42,14 +38,14 @@ public class RabbitConfig {
         Queue confirmed = QueueBuilder.durable(CONFIRMED_QUEUE).deadLetterExchange(deadLetterExchange).build();
         Queue cancelled = QueueBuilder.durable(CANCELLED_QUEUE).deadLetterExchange(deadLetterExchange).build();
 
-        Binding confirmedBinding = BindingBuilder.bind(confirmed).to(eventsExchange).with(BOOKING_CONFIRMED);
-        Binding cancelledBinding = BindingBuilder.bind(cancelled).to(eventsExchange).with(BOOKING_CANCELLED);
+        Binding confirmedBinding = BindingBuilder.bind(confirmed).to(eventsExchange).with(EventTypes.BOOKING_CONFIRMED);
+        Binding cancelledBinding = BindingBuilder.bind(cancelled).to(eventsExchange).with(EventTypes.BOOKING_CANCELLED);
         Binding dlqBinding = BindingBuilder.bind(dlq).to(dlx);
 
         return new Declarables(dlx, dlq, confirmed, cancelled, confirmedBinding, cancelledBinding, dlqBinding);
     }
 
-    /** JSON on the wire. Picked up by both RabbitTemplate and the @RabbitListener containers. */
+    /** JSON on the wire. Picked up by the @RabbitListener containers (and RabbitTemplate). */
     @Bean
     MessageConverter jsonMessageConverter(JsonMapper jsonMapper) {
         return new JacksonJsonMessageConverter(jsonMapper);

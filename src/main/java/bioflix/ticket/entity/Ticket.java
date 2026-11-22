@@ -1,99 +1,92 @@
 package bioflix.ticket.entity;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
-/** One ticket = one seat. */
+/**
+ * One ticket = one booked seat. Self-contained (snapshot of movie, hall and time), so it can be
+ * scanned without calling other services.
+ */
 @Document(collection = "tickets")
+@CompoundIndex(name = "one_ticket_per_booked_seat", def = "{'bookingId': 1, 'seat.row': 1, 'seat.number': 1}", unique = true)
+@CompoundIndex(name = "my_tickets", def = "{'userId': 1, 'startsAt': -1}")
+@CompoundIndex(name = "door_scanning", def = "{'showtimeId': 1, 'status': 1}")
 public class Ticket {
 
     @Id
     private String id;
 
-    @Indexed
-    private Long bookingId;
+    /** Human-readable and unique, e.g. TK-7F3K-92QD. */
+    @Indexed(unique = true)
+    private String ticketNumber;
 
-    @Indexed
-    private Long userId;
+    private String bookingId;    // Booking UUID
+    private String userId;       // User UUID
+    private String showtimeId;   // Catalog ObjectId
 
-    private String showtimeId;
+    private TicketSeat seat;
+
+    // Snapshot from booking.confirmed
     private String movieTitle;
     private String hallName;
-    private Instant startTime;
-    private String seat;
+    private Instant startsAt;
 
-    /**
-     * showtimeId|seat while the ticket holds the seat (VALID or USED). Removed on cancel so the
-     * seat can be ticketed again for a new booking. Unique via a partial index (MongoIndexConfig).
-     */
-    private String seatKey;
+    /** HMAC-signed { ticketNumber, showtimeId } – this is what the QR code contains. */
+    private String qrToken;
 
     private TicketStatus status = TicketStatus.VALID;
 
-    /** Text encoded in the QR code – scanned at the door. */
-    private String qrPayload;
-
-    /** QR code as PNG bytes. Later: move to object storage (S3) – "not yet wired" in the diagram. */
-    private byte[] qrCodePng;
-
     private Instant issuedAt;
-    private Instant usedAt;
-    private Instant cancelledAt;
+    private Instant scannedAt;
+    private Instant voidedAt;
 
     public Ticket() {
     }
 
-    public Ticket(Long bookingId, Long userId, String showtimeId, String movieTitle, String hallName,
-                  Instant startTime, String seat) {
+    public Ticket(String ticketNumber, String bookingId, String userId, String showtimeId, TicketSeat seat,
+                  String movieTitle, String hallName, Instant startsAt, String qrToken) {
+        this.ticketNumber = ticketNumber;
         this.bookingId = bookingId;
         this.userId = userId;
         this.showtimeId = showtimeId;
+        this.seat = seat;
         this.movieTitle = movieTitle;
         this.hallName = hallName;
-        this.startTime = startTime;
-        this.seat = seat;
-        this.seatKey = seatKey(showtimeId, seat);
+        this.startsAt = startsAt;
+        this.qrToken = qrToken;
         this.issuedAt = Instant.now();
-    }
-
-    public static String seatKey(String showtimeId, String seat) {
-        return showtimeId + "|" + seat;
     }
 
     public static String qrUrl(String ticketId) {
         return "/api/tickets/" + ticketId + "/qr";
     }
 
-    public void markUsed() {
-        this.status = TicketStatus.USED;
-        this.usedAt = Instant.now();
+    public void markScanned() {
+        this.status = TicketStatus.SCANNED;
+        this.scannedAt = Instant.now();
     }
 
-    /** Voids the ticket and releases the seat. */
-    public void cancel() {
-        this.status = TicketStatus.CANCELLED;
-        this.seatKey = null;   // null fields aren't written, so the partial unique index ignores this ticket
-        this.cancelledAt = Instant.now();
+    public void markVoid() {
+        this.status = TicketStatus.VOID;
+        this.voidedAt = Instant.now();
     }
 
     public String getId() { return id; }
-    public Long getBookingId() { return bookingId; }
-    public Long getUserId() { return userId; }
+    public String getTicketNumber() { return ticketNumber; }
+    public String getBookingId() { return bookingId; }
+    public String getUserId() { return userId; }
     public String getShowtimeId() { return showtimeId; }
+    public TicketSeat getSeat() { return seat; }
     public String getMovieTitle() { return movieTitle; }
     public String getHallName() { return hallName; }
-    public Instant getStartTime() { return startTime; }
-    public String getSeat() { return seat; }
-    public String getSeatKey() { return seatKey; }
+    public Instant getStartsAt() { return startsAt; }
+    public String getQrToken() { return qrToken; }
     public TicketStatus getStatus() { return status; }
-    public String getQrPayload() { return qrPayload; }
-    public void setQrPayload(String qrPayload) { this.qrPayload = qrPayload; }
-    public byte[] getQrCodePng() { return qrCodePng; }
-    public void setQrCodePng(byte[] qrCodePng) { this.qrCodePng = qrCodePng; }
     public Instant getIssuedAt() { return issuedAt; }
-    public Instant getUsedAt() { return usedAt; }
-    public Instant getCancelledAt() { return cancelledAt; }
+    public Instant getScannedAt() { return scannedAt; }
+    public Instant getVoidedAt() { return voidedAt; }
 }
