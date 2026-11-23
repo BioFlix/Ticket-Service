@@ -9,7 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,32 +24,48 @@ class ProcessedEventServiceTest {
 
     @Test
     void runsAndRecordsNewEvent() {
+        // Arrange
         when(repository.existsById(event.eventId().toString())).thenReturn(false);
+        ProcessedEventService service = new ProcessedEventService(repository);
         AtomicInteger runs = new AtomicInteger();
 
-        new ProcessedEventService(repository).runOnce(event, runs::incrementAndGet);
+        // Act
+        service.runOnce(event, runs::incrementAndGet);
 
+        // Assert
         assertThat(runs).hasValue(1);
         verify(repository).insert(any(ProcessedEvent.class));
     }
 
     @Test
     void skipsAlreadyProcessedEvent() {
+        // Arrange
         when(repository.existsById(event.eventId().toString())).thenReturn(true);
+        ProcessedEventService service = new ProcessedEventService(repository);
         AtomicInteger runs = new AtomicInteger();
 
-        new ProcessedEventService(repository).runOnce(event, runs::incrementAndGet);
+        // Act
+        service.runOnce(event, runs::incrementAndGet);
 
+        // Assert
         assertThat(runs).hasValue(0);
+        verify(repository, never()).insert(any(ProcessedEvent.class));
     }
 
     @Test
     void failedHandlerIsNotRecorded() {
+        // Arrange
         when(repository.existsById(event.eventId().toString())).thenReturn(false);
-
-        assertThatThrownBy(() -> new ProcessedEventService(repository).runOnce(event, () -> {
+        ProcessedEventService service = new ProcessedEventService(repository);
+        Runnable failingHandler = () -> {
             throw new IllegalStateException("boom");
-        })).isInstanceOf(IllegalStateException.class);
+        };
+
+        // Act
+        Throwable thrown = catchThrowable(() -> service.runOnce(event, failingHandler));
+
+        // Assert
+        assertThat(thrown).isInstanceOf(IllegalStateException.class);
         verify(repository, never()).insert(any(ProcessedEvent.class));
     }
 }

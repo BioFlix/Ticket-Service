@@ -1,0 +1,51 @@
+# Runs ticket-service with its own MongoDB and RabbitMQ.
+#   docker compose up --build                              start everything
+#   SPRING_PROFILES_ACTIVE=seed docker compose up --build  ... and add demo tickets
+#   docker compose down                                    stop (add -v to also delete the data)
+services:
+  ticket-service:
+    build: .
+    image: bioflix/ticket-service:local
+    ports:
+      - "8085:8085"
+    environment:
+      MONGO_HOST: mongo
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      # Signs the QR codes – set your own (at least 32 characters) in a .env file outside local development
+      TICKET_QR_SECRET: ${TICKET_QR_SECRET:-local-dev-only-secret-change-me-0123456789}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:8
+    ports:
+      - "27017:27017"
+    volumes:
+      - tickets-mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # admin UI, guest/guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+volumes:
+  tickets-mongo-data:

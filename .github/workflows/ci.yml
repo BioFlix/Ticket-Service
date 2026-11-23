@@ -1,0 +1,81 @@
+# CI/CD for ticket-service
+#  1. unit-tests: runs the unit tests (mvn test) on every push and pull request
+#  2. build:      packages the runnable jar and stores it as a downloadable artifact (only if the tests pass)
+#  3. docker:     checks that the Docker image builds (only if the tests pass). It is not pushed anywhere yet.
+# The integration test (TicketFlowIT, needs Docker) is not part of this pipeline – run it locally with `mvn verify`.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run unit tests
+        run: mvn -B -ntp test
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: target/surefire-reports/
+          retention-days: 7
+
+  build:
+    name: Build jar
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Package
+        run: mvn -B -ntp -DskipTests package
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ticket-service-jar
+          path: target/ticket-service-*.jar
+          retention-days: 14
+
+  docker:
+    name: Build Docker image
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t bioflix/ticket-service:${{ github.sha }} .

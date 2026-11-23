@@ -57,7 +57,20 @@ Ukendte felter ignoreres. En besked uden gyldig envelope sendes direkte til `tic
 - **Rækkefølgen i inbox.** Modellen siger "indsæt eventId først i samme transaktion". MongoDB har kun transaktioner på et replica set, så `eventId` gemmes *efter* handleren er lykkedes. Går servicen ned midt i, bliver eventet leveret igen og håndteret igen – det er sikkert, fordi indexet pr. booket sæde og "én `ticket.issued` pr. booking" gør handleren idempotent.
 - **`cancelled_bookings`** (ekstra collection). `booking.confirmed` og `booking.cancelled` ligger i hver sin kø og kan komme i forkert rækkefølge. Kommer annulleringen først, huskes den her, så en sen bekræftelse ikke udsteder billetter.
 
-## Kør lokalt
+## Kør med Docker Compose
+Starter ticket-service, MongoDB og RabbitMQ i containere (bygger image'et ud fra `Dockerfile`):
+```bash
+docker compose up --build
+```
+Med demo-billetter:
+```bash
+SPRING_PROFILES_ACTIVE=seed docker compose up --build
+```
+Stop med `docker compose down` (tilføj `-v` for også at slette databasen).
+Compose bruger portene 8085, 27017, 5672 og 15672 – stop andre MongoDB/RabbitMQ-containere først, hvis de bruger dem.
+`TICKET_QR_SECRET` kan sættes i en `.env`-fil ved siden af `docker-compose.yml`.
+
+## Kør lokalt uden Docker for servicen
 Servicen skal bruge MongoDB og RabbitMQ:
 ```bash
 docker run -d --name bioflix-rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
@@ -88,5 +101,19 @@ mvn spring-boot:run -Dspring-boot.run.profiles=seed
 Til scanning: brug fx `X-User-Id: 99999999-9999-4999-8999-999999999999` og `X-User-Role: ADMIN`.
 
 ## Tests
-`mvn test` – integrationstesten starter MongoDB og RabbitMQ med Testcontainers, så Docker skal køre.
-Den sender events som rå JSON (præcis som de andre services vil gøre), så den tjekker også event-kontrakten.
+Alle tests følger **Arrange / Act / Assert** med en kommentar over hver del.
+
+| Kommando | Kører |
+|---|---|
+| `mvn test` | Unit tests (`*Test`) – hurtige, ingen Docker |
+| `mvn verify` | Unit tests + integrationstesten `TicketFlowIT` (`*IT`), som starter MongoDB og RabbitMQ med Testcontainers – Docker skal køre |
+
+`TicketFlowIT` sender events som rå JSON (præcis som de andre services vil gøre), så den tjekker også event-kontrakten.
+
+## CI/CD
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) kører ved hvert push til `main`, ved pull requests og manuelt:
+1. **Unit tests** – `mvn test`. Testrapporterne gemmes som artifact (`unit-test-reports`).
+2. **Build jar** – kun hvis testene er grønne: `mvn package`, og jar-filen gemmes som artifact (`ticket-service-jar`).
+3. **Build Docker image** – kun hvis testene er grønne: tjekker at `Dockerfile` kan bygges. Image'et bliver ikke pushet nogen steder endnu.
+
+Integrationstesten er ikke med i pipelinen; kør den lokalt med `mvn verify`.
